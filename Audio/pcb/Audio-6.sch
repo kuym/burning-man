@@ -3731,7 +3731,7 @@ Basic schematic elements and footprints for 0603, 1206, and PTH resistors.</desc
 <part name="V3" library="Outbreak" deviceset="V" device=""/>
 <part name="C7" library="Outbreak" deviceset="CAP" device="-0603-MIN" value="100n"/>
 <part name="C8" library="Outbreak" deviceset="CAP" device="-0603-MIN" value="100n"/>
-<part name="C9" library="Outbreak" deviceset="CAP" device="-0603-MIN" value="4.7u"/>
+<part name="C9" library="Outbreak" deviceset="CAP" device="-0603-MIN" value="1u"/>
 <part name="GND12" library="Outbreak" deviceset="GND" device=""/>
 <part name="GND13" library="Outbreak" deviceset="GND" device=""/>
 <part name="GND14" library="Outbreak" deviceset="GND" device=""/>
@@ -3764,13 +3764,13 @@ Basic schematic elements and footprints for 0603, 1206, and PTH resistors.</desc
 <part name="IC7" library="Outbreak" deviceset="SWITCHING-REGULATOR-VARIABLE-BUCK-DIODES-AP6503" device=""/>
 <part name="L1" library="Outbreak" deviceset="INDUCTOR" device="-6X6MM" value="10u"/>
 <part name="C29" library="Outbreak" deviceset="CAP" device="-0603-MIN" value="10n"/>
-<part name="C30" library="Outbreak" deviceset="CAP" device="-1206" value="22u"/>
-<part name="C31" library="Outbreak" deviceset="CAP" device="-1206" value="22u"/>
+<part name="C30" library="Outbreak" deviceset="CAP" device="-1206" value="22u 10V"/>
+<part name="C31" library="Outbreak" deviceset="CAP" device="-1206" value="22u 25V"/>
 <part name="C32" library="Outbreak" deviceset="CAP" device="-0603-MIN" value="100n"/>
 <part name="C33" library="Outbreak" deviceset="CAP" device="-0603-MIN" value="6.8n"/>
 <part name="R16" library="Outbreak" deviceset="RESISTOR" device="-0603-MIN" value="6.8k"/>
-<part name="R17" library="Outbreak" deviceset="RESISTOR" device="-0603-MIN"/>
-<part name="R18" library="Outbreak" deviceset="RESISTOR" device="-0603-MIN"/>
+<part name="R17" library="Outbreak" deviceset="RESISTOR" device="-0603-MIN" value="22k"/>
+<part name="R18" library="Outbreak" deviceset="RESISTOR" device="-0603-MIN" value="100k"/>
 <part name="V12" library="Outbreak" deviceset="V" device=""/>
 <part name="V13" library="Outbreak" deviceset="V" device=""/>
 <part name="U4" library="Outbreak" deviceset="GND-ISOLATOR" device="-0.032&quot;"/>
@@ -3844,14 +3844,14 @@ Basic schematic elements and footprints for 0603, 1206, and PTH resistors.</desc
 <part name="K4" library="BMan" deviceset="SPEAKER-BLOCK" device=""/>
 <part name="K10" library="BMan" deviceset="SPEAKER-BLOCK" device=""/>
 <part name="K11" library="BMan" deviceset="SPEAKER-BLOCK" device=""/>
-<part name="C25" library="Outbreak" deviceset="CAP" device="-1206" value="22u"/>
+<part name="C25" library="Outbreak" deviceset="CAP" device="-1206" value="22u 25V"/>
 <part name="R23" library="Outbreak" deviceset="RESISTOR" device="-0603-MIN" value="100k"/>
 <part name="K8" library="Outbreak" deviceset="USB-5-PIN" device="-MICROB-FCI-10118193-NARROW"/>
 <part name="K1" library="Outbreak" deviceset="HEADER-1X01" device="-NO-SILK"/>
 <part name="K2" library="Outbreak" deviceset="HEADER-1X01" device="-NO-SILK"/>
 <part name="K12" library="Outbreak" deviceset="HEADER-1X01" device="-NO-SILK"/>
 <part name="K13" library="Outbreak" deviceset="HEADER-1X01" device="-NO-SILK"/>
-<part name="C26" library="Outbreak" deviceset="CAP" device="-1206" value="22u"/>
+<part name="C26" library="Outbreak" deviceset="CAP" device="-1206" value="22u 10V"/>
 <part name="D1" library="Outbreak" deviceset="DIODE" device="-SOD323"/>
 <part name="U1" library="Outbreak" deviceset="GND-ISOLATOR" device="-0.032&quot;"/>
 <part name="GND23" library="Outbreak" deviceset="GND" device=""/>
@@ -4246,14 +4246,14 @@ Basic schematic elements and footprints for 0603, 1206, and PTH resistors.</desc
 <pinref part="R19" gate="G$1" pin="1"/>
 </segment>
 </net>
-<net name="N$5" class="0">
+<net name="D-" class="0">
 <segment>
 <pinref part="IC4" gate="G$1" pin="PIO3_4/USB_D-"/>
 <pinref part="R20" gate="G$1" pin="1"/>
 <wire x1="63.5" y1="190.5" x2="58.42" y2="190.5" width="0.1524" layer="91"/>
 </segment>
 </net>
-<net name="N$6" class="0">
+<net name="D+" class="0">
 <segment>
 <pinref part="IC4" gate="G$1" pin="PIO3_5/USB_D+"/>
 <pinref part="R21" gate="G$1" pin="1"/>

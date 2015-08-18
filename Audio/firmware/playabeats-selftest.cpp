@@ -327,8 +327,7 @@ int main(void)
 
 	TXnRX = false;	// initially start in RX mode
 	
-	// mute audio
-	ampOn = false;
+	ampOn = true;
 
 	system.setCoreFrequency(72000000UL);
 
@@ -353,117 +352,39 @@ int main(void)
 	
 	// 32KHz samplerate, stereo, 16-bit
 	AudioDACStart(32000);
-	
-	enum StreamState
-	{
-		StreamState_Uninitialized,
-		StreamState_ReceivedInit0,
-		StreamState_CommandPhase,
-		StreamState_CommandValuePhase,
-		StreamState_FrameCountBegin,
-		StreamState_Active,
-	};
 
-	unsigned int	frameCount = 0,
-					state = StreamState_Uninitialized,
-					command = Command_None,
-					lpc = 7500, hpc = 4000,
-					identify = 0,
-					attenuation = 29000,
-					vfx = 0;
-	signed int		in[2] = {0}, lp[2] = {0}, hp[2] = {0};
+	(void)ULawDecoder;	// suppress warning
 	
-	while(UARTCharAvailable())
+	int wlf = (1 << 4), whf = (20 << 16), thlf = 0, thhf = 0, vol = 0, voldir = 1;
+	while(1)
 	{
-		// process next received character
-		switch(state)
+		if(!AudioFIFOIsFull())
 		{
-		case StreamState_Uninitialized:
-			if(UARTChar() == 0x7F)
-				state = StreamState_ReceivedInit0;
-			break;
+			int lf = ksin(thlf >> 16), hf = ksin(thhf >> 16);
 
-		case StreamState_ReceivedInit0:
-			if(UARTChar() == 0xE0)	state = StreamState_CommandPhase;
-			else					state = StreamState_Uninitialized;
-			break;
+			(void)hf;
+			AudioFIFOWrite(mul(hf, vol) >> 1, mul(lf, vol) >> 1);
+			
+			thlf += wlf;
+			thhf += whf;
 
-		case StreamState_CommandPhase:
-			switch((command = UARTChar()))
+			if((wlf += (1 + (wlf >> 16))) > (20 << 16))
+				wlf = (1 << 4);
+			
+			if((whf += (1 + (whf >> 16))) > (60 << 16))
+				whf = (20 << 16);
+
+			vol += voldir;
+			if((voldir > 0) && (vol >= 65535))
 			{
-			case Command_FrameCountBegin:
-				state = StreamState_FrameCountBegin;
-				break;
-			case Command_Sync:
-				break;
-			case Command_IdentifyEndpoint:
-			case Command_SetAttenuation:
-			case Command_SetLowPassCorner:
-			case Command_SetHighPassCorner:
-			case Command_SetVisualEffects:
-				state = StreamState_CommandValuePhase;
-				break;
-			default:
-				state = StreamState_Uninitialized;	// error and desynchronize
-				break;
+				voldir = -voldir;
+				vol = 65535;
 			}
-			break;
-
-		case StreamState_CommandValuePhase:
+			if((voldir < 0) && (vol <= 0))
 			{
-				int value = UARTChar();
-				switch(command)
-				{
-				case Command_IdentifyEndpoint:
-					identify = value;
-					break;
-				case Command_SetAttenuation:
-					attenuation = value;
-					break;
-				case Command_SetLowPassCorner:
-					lpc = value << 8;
-					break;
-				case Command_SetHighPassCorner:
-					hpc = value << 8;
-					break;
-				case Command_SetVisualEffects:
-					vfx = !!value;
-					break;
-				}
+				voldir = -voldir;
+				vol = 0;
 			}
-			state = StreamState_CommandPhase;
-			break;
-
-		case StreamState_FrameCountBegin:
-			frameCount = (UARTChar() << 1);
-			state = StreamState_Active;
-			break;
-
-		case StreamState_Active:
-			{
-				unsigned char d = UARTChar();
-
-				in[1] = in[0];
-				in[0] = ULawDecoder[d >> 4](d & 0x0F) << 16;
-				
-				lp[1] = lp[0];
-				lp[0] = (signed int)(mul(in[0], lpc) + mul(lp[1], 32768 - lpc));
-
-				hp[1] = hp[0];
-				hp[0] = (signed int)(mul(in[0], (65536 - hpc) >> 1) + mul(in[1], (-65536 + hpc) >> 1) + mul(hp[1], 32768 - hpc));
-
-				(void)vfx;
-				(void)identify;
-
-				while(AudioFIFOIsFull())
-					;	// should be a minimally-wasteful synchronization
-
-				AudioFIFOWrite(mul(lp[0], attenuation) >> 16, mul(hp[0], attenuation) >> 16);
-				
-				if(--frameCount == 0)
-					state = StreamState_Uninitialized;
-			}
-			break;
 		}
 	}
 }

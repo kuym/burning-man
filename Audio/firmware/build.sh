@@ -10,7 +10,6 @@ build()
 	mayskip=1
 	for s in $sources; do
 		if [[ ! -f "$out.elf" ]] || [[ "$s" -nt "$out.elf" ]]; then
-			echo $s is nt $out.elf
 			mayskip=0
 		fi
 	done
@@ -19,6 +18,7 @@ build()
 		return
 	fi
 
+	objdir=$(dirname $out)
 	objs=""
 	count=0
 	for s in $sources; do
@@ -38,7 +38,7 @@ build()
 				;;
 		esac
 		f=$(basename $s | sed -E 's/(^.*)\.[a-zA-Z]+$/\1/')
-		o="obj/$count-$f.o"
+		o="$objdir/$count-$f.o"
 		count=$(($count + 1))
 
 		echo "Building $s"
@@ -115,6 +115,15 @@ sources="\
 GalagoAPI.cpp \
 LPC13xx.cpp \
 beacon.cpp \
+"
+
+build
+
+out="out/playabeats-selftest"
+sources="\
+GalagoAPI.cpp \
+LPC13xx.cpp \
+playabeats-selftest.cpp \
 "
 
 build
