@@ -5001,7 +5001,7 @@ Basic schematic elements and footprints for 0603, 1206, and PTH resistors.</desc
 <pinref part="R19" gate="G$1" pin="2"/>
 </segment>
 </net>
-<net name="N$8" class="0">
+<net name="IO1" class="0">
 <segment>
 <pinref part="IC4" gate="G$1" pin="TDO/PIO1_1/AD2/CT32B1_MAT0"/>
 <pinref part="K5" gate="G$1" pin="P$1"/>
@@ -5010,7 +5010,7 @@ Basic schematic elements and footprints for 0603, 1206, and PTH resistors.</desc
 <wire x1="76.2" y1="228.6" x2="58.42" y2="228.6" width="0.1524" layer="91"/>
 </segment>
 </net>
-<net name="N$9" class="0">
+<net name="IO2" class="0">
 <segment>
 <pinref part="IC4" gate="G$1" pin="TRST/PIO1_2/AD3/CT32B1_MAT1"/>
 <pinref part="K6" gate="G$1" pin="P$1"/>
@@ -5019,7 +5019,7 @@ Basic schematic elements and footprints for 0603, 1206, and PTH resistors.</desc
 <wire x1="78.74" y1="226.06" x2="58.42" y2="226.06" width="0.1524" layer="91"/>
 </segment>
 </net>
-<net name="N$18" class="0">
+<net name="IO3" class="0">
 <segment>
 <pinref part="IC4" gate="G$1" pin="SWDIO/PIO1_3/AD4/CT32B1_MAT2"/>
 <pinref part="K14" gate="G$1" pin="P$1"/>

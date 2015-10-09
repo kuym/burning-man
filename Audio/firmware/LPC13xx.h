@@ -1530,8 +1530,6 @@
 	#endif //__cplusplus
 	
 	#define INTERRUPT							__attribute__ ((interrupt ("IRQ")))		//interrupt type is ignored on ARMv7-M
-	#define	InterruptsDisable()					__asm volatile ("CPSID i" ::)
-	#define	InterruptsEnable()					__asm volatile ("CPSIE i" ::)
 	
 	#ifdef __cplusplus
 	extern "C" {

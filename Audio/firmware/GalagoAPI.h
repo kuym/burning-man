@@ -1085,6 +1085,9 @@ extern System	system;
 
 }	//ns Galago
 
+void  InterruptFreeEnter(void);
+void  InterruptFreeLeave(void);
+
 
 //C++ memory methods
 

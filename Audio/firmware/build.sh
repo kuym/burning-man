@@ -92,11 +92,11 @@ transmitter.cpp \
 
 build
 
-out="out/usb-charge"
+out="out/power"
 sources="\
 GalagoAPI.cpp \
 LPC13xx.cpp \
-usb-charge.cpp \
+power.cpp \
 "
 
 build
@@ -124,6 +124,15 @@ sources="\
 GalagoAPI.cpp \
 LPC13xx.cpp \
 playabeats-selftest.cpp \
+"
+
+build
+
+out="out/signalgen"
+sources="\
+GalagoAPI.cpp \
+LPC13xx.cpp \
+signalgen.cpp \
 "
 
 build

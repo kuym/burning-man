@@ -97,8 +97,8 @@ void*			memcpy(void* dest, void const* source, size_t length)
 	return(d);
 }
 
-inline void	InterruptFreeEnter(void);
-inline void	InterruptFreeLeave(void);
+static inline void	InterruptFreeEnterInline(void);
+static inline void	InterruptFreeLeaveInline(void);
 
 ////////////////////////////////////////////////////////////////
 // NumberFormatter formats numbers into text
@@ -704,16 +704,26 @@ static IOCore_t IOCore;
 ////////////////////////////////////////////////////////////////
 // These are global but depend on IOCore
 
-inline void	InterruptFreeEnter(void)
+static inline void	InterruptFreeEnterInline(void)
 {
 	__asm__ volatile ("cpsid i" ::);
 	IOCore.interruptNest++;
 }
 
-inline void	InterruptFreeLeave(void)
+static inline void	InterruptFreeLeaveInline(void)
 {
 	if(--IOCore.interruptNest == 0)
 		__asm__ volatile ("cpsie i" ::);
+}
+
+void	InterruptFreeEnter(void)
+{
+	InterruptFreeEnterInline();
+}
+
+void	InterruptFreeLeave(void)
+{
+	InterruptFreeLeaveInline();
 }
 
 
@@ -734,7 +744,7 @@ inline void	InterruptFreeLeave(void)
 	//The tickrate is 400kHz
 	*SystickClockDivider = 30;	//because the chip starts at 12MHz initially. At 72MHz this would be 180.
 	
-	InterruptFreeLeave();	//enable global interrupts
+	InterruptFreeLeaveInline();	//enable global interrupts
 }
 
 static unsigned int	System_getPLLInputFrequency(void)
@@ -994,7 +1004,7 @@ void*			System::alloc(size_t size)
 	if(size == 0)
 		return(0);	//@@throw?
 	
-	InterruptFreeEnter();
+	InterruptFreeEnterInline();
 	unsigned int* m = (unsigned int*)__heapstart;
 	
 	//allocations are (4 + size) bytes, rounded up to the next 4-byte boundary
@@ -1016,7 +1026,7 @@ void*			System::alloc(size_t size)
 			for(unsigned int i = 1; i < s; i++)	//zero memory
 				m[i] = 0;
 			
-			InterruptFreeLeave();
+			InterruptFreeLeaveInline();
 			return(m + 1);
 		}
 		m += bs;
@@ -1024,7 +1034,7 @@ void*			System::alloc(size_t size)
 	__asm volatile("bkpt 7"::);	//@@ Out-of-memory exception
 	
 	//effectively unreachable code:
-	InterruptFreeLeave();
+	InterruptFreeLeaveInline();
 	return(0);
 }
 
@@ -1033,10 +1043,10 @@ void			System::free(void* allocation)
 {
 	unsigned int* a = (unsigned int*)allocation;
 	
-	InterruptFreeEnter();
+	InterruptFreeEnterInline();
 	if((a < __heapstart) || (a >= __heapend) || !(a[-1] & kHeapAllocated))
 	{
-		InterruptFreeLeave();
+		InterruptFreeLeaveInline();
 		return;	//@@throw?
 	}
 	
@@ -1065,7 +1075,7 @@ void			System::free(void* allocation)
 	}
 	
 	*a = cbs;	//merge free blocks if contiguous
-	InterruptFreeLeave();
+	InterruptFreeLeaveInline();
 }
 
 
@@ -1110,7 +1120,7 @@ bool			System::completeTask(Task t, bool success)
 	//if the task has callback(s) when it's completed, defer them
 	if((t._t->_flags & 0x3FFF) > 0)
 	{
-		InterruptFreeEnter();
+		InterruptFreeEnterInline();
 		
 			//do we need to expand the deferred list?
 			if(ic->deferredTaskIdx == ic->deferredTaskLen)
@@ -1128,7 +1138,7 @@ bool			System::completeTask(Task t, bool success)
 			//defer it
 			ic->deferredTasks[ic->deferredTaskIdx++] = t;
 		
-		InterruptFreeLeave();
+		InterruptFreeLeaveInline();
 	}
 	
 	return(true);
@@ -1178,7 +1188,7 @@ void	System::invokeDeferredCallbacks(void)
 	IOCore_t volatile* ic = (IOCore_t volatile*)&IOCore;
 	int count;
 	
-	InterruptFreeEnter();
+	InterruptFreeEnterInline();
 	
 		if((count = ic->deferredTaskIdx) > 0)
 		{
@@ -1190,7 +1200,7 @@ void	System::invokeDeferredCallbacks(void)
 			//int lastLen = ic->deferredTaskLen;
 			ic->deferredTaskLen = 0;
 		
-			InterruptFreeLeave();
+			InterruptFreeLeaveInline();
 			
 				for(int c = 0; c < count; c++)
 				{
@@ -1214,7 +1224,7 @@ void	System::invokeDeferredCallbacks(void)
 			
 			//if possible, recycle the list. If it would have to be compacted anyway, trash it
 			// -> note: disabled because it's too risky and leads to needlessly complex flow.
-			//InterruptFreeEnter();
+			//InterruptFreeEnterInline();
 			
 			/*if(ic->deferredTasks == 0)
 			{
@@ -1234,13 +1244,13 @@ void	System::invokeDeferredCallbacks(void)
 		}*/
 		}
 		else
-			InterruptFreeLeave();
+			InterruptFreeLeaveInline();
 }
 
 void			System::sleep(void) const
 {
 	//@@deep-sleep and interrupt arming as appropriate
-	InterruptFreeEnter();
+	InterruptFreeEnterInline();
 	
 		IOCore_t volatile* ic = (IOCore_t volatile*)&IOCore;
 		if(ic->deferredTaskIdx == 0)
@@ -1249,7 +1259,7 @@ void			System::sleep(void) const
 			__asm__ volatile ("cpsie i \n wfi"::);	//chip is sleeping, waiting for the next event.
 		}
 
-	InterruptFreeLeave();
+	InterruptFreeLeaveInline();
 
 	System::invokeDeferredCallbacks();
 	//@@deep-sleep and interrupt disarming
@@ -1299,7 +1309,7 @@ Task			System_delayTicks(unsigned int ticks)
 	timer->task = task;
 	
 	//needs special deadline-order queueing
-	InterruptFreeEnter();
+	InterruptFreeEnterInline();
 		
 		System_wakeFromSpan(*SystickValue);
 		
@@ -1316,7 +1326,7 @@ Task			System_delayTicks(unsigned int ticks)
 		
 		System_wakeFromSpan(*SystickValue);
 		
-	InterruptFreeLeave();
+	InterruptFreeLeaveInline();
 	
 	return(task);
 }
@@ -1551,7 +1561,8 @@ unsigned int	IO::Pin::readAnalog(void) const
 	}
 	
 	(void)*ADCData;
-	*ADCControl = (*ADCControl & ~ADCControl_ChannelSelectBitmask) | (1 << adcChannel) | ADCControl_StartNow;
+	// note (15 << 8) is APB / (15 + 1) to get close to the 4.5MHz required for the ADC
+	*ADCControl = (*ADCControl & ~ADCControl_ChannelSelectBitmask) | (1 << adcChannel) | (15 << 8) | ADCControl_StartNow;
 	unsigned int sample;
 	while(!((sample = *ADCData) & ADCData_Done));	//whoa, a spinwait! Chosen because the typ. time is 2.5us
 	
@@ -1727,23 +1738,23 @@ void			IO::SPI::start(int bitRate, Mode mode, Role role)
 		io.miso.setMode(IO::Pin::Default);
 		io.mosi.setMode(IO::Pin::Default);
 		
-		InterruptFreeEnter();
+		InterruptFreeEnterInline();
 			
 			IOCore.flushQueue((IOCore::TaskQueueItem**)&IOCore.spiCurrentTask);
 			
-		InterruptFreeLeave();
+		InterruptFreeLeaveInline();
 	}
 }
 
 
 void			IO_SPI_queueTask(IOCore::SPITask* spiTask)
 {
-	InterruptFreeEnter();
+	InterruptFreeEnterInline();
 	
 		IOCore.queueItem((IOCore::TaskQueueItem**)&IOCore.spiCurrentTask, spiTask);
 		*SPI0InterruptEnable |= SPI0Interrupt_TransmitFIFOHalfEmpty;
 	
-	InterruptFreeLeave();
+	InterruptFreeLeaveInline();
 }
 
 Task			IO::SPI::write(byte b, int length, Buffer bytesReadBack)
@@ -1825,7 +1836,7 @@ bool			IO::SPI::unlock(void)
 {
 	bool unlocked = false;
 	
-	InterruptFreeEnter();
+	InterruptFreeEnterInline();
 	
 		IOCore::SPITask* currentTask = IOCore.spiCurrentTask;
 		
@@ -1841,7 +1852,7 @@ bool			IO::SPI::unlock(void)
 			unlocked = true;
 		}
 	
-	InterruptFreeLeave();
+	InterruptFreeLeaveInline();
 	
 	return(unlocked);
 }
@@ -1934,12 +1945,12 @@ void		IO::UART::start(int baudRate, Mode mode)
 		io.txd.setMode(IO::Pin::UART);
 		io.rxd.setMode(IO::Pin::UART);
 		
-		InterruptFreeEnter();
+		InterruptFreeEnterInline();
 		
 			if(IOCore.uartReceiveBuffer == 0)
 				IOCore.uartReceiveBuffer = new(32) CircularBuffer(32);	//make parametric?
 		
-		InterruptFreeLeave();
+		InterruptFreeLeaveInline();
 		
 		IO::UART::startWithExplicitRatio(q, n, d, mode);
 	}
@@ -1956,7 +1967,7 @@ void		IO::UART::start(int baudRate, Mode mode)
 		io.txd.setMode(IO::Pin::Default);
 		io.rxd.setMode(IO::Pin::Default);
 		
-		InterruptFreeEnter();
+		InterruptFreeEnterInline();
 			
 			delete IOCore.uartReceiveBuffer;
 			IOCore.uartReceiveBuffer = 0;
@@ -1965,7 +1976,7 @@ void		IO::UART::start(int baudRate, Mode mode)
 			//empty the queue
 			IOCore.flushQueue((IOCore::TaskQueueItem**)&IOCore.uartCurrentWriteTask);
 			
-		InterruptFreeLeave();
+		InterruptFreeLeaveInline();
 	}
 }
 void		IO::UART::startWithExplicitRatio(int divider, int fracN, int fracD, Mode mode)
@@ -1987,7 +1998,8 @@ void		IO::UART::startWithExplicitRatio(int divider, int fracN, int fracD, Mode m
 	
 	(void)*UARTLineStatus;	//clear status
 	
-	IOCore.irqUART = IO_onUARTInterrupt;
+	if(IOCore.irqUART == 0)
+		IOCore.irqUART = IO_onUARTInterrupt;
 	
 	//set up UART interrupt
 	*UARTInterrupts = (UARTInterrupts_ReceivedData | UARTInterrupts_TxBufferEmpty | UARTInterrupts_RxLineStatus);	//enable conditions for the UART to interrupt
@@ -1996,11 +2008,11 @@ void		IO::UART::startWithExplicitRatio(int divider, int fracN, int fracD, Mode m
 
 int			IO::UART::bytesAvailable(void) const
 {
-	InterruptFreeEnter();
+	InterruptFreeEnterInline();
 	
 		int available = (IOCore.uartReceiveBuffer != 0)? IOCore.uartReceiveBuffer->bytesUsed() : 0;
 	
-	InterruptFreeLeave();
+	InterruptFreeLeaveInline();
 	
 	return(available);
 }
@@ -2008,13 +2020,13 @@ int			IO::UART::bytesAvailable(void) const
 //return the current UART receive task, creating one if none exists
 Task		IO::UART::bytesReceived(void)
 {
-	InterruptFreeEnter();
+	InterruptFreeEnterInline();
 	
 		Task t = IOCore.uartRecvTask;
 		if(t == Task())
 			IOCore.uartRecvTask = t = system.createTask();
 	
-	InterruptFreeLeave();
+	InterruptFreeLeaveInline();
 	
 	return(t);
 }
@@ -2026,7 +2038,7 @@ void IO_UART_startTransmission(void)
 	//the stupid lpc1xxx implementation of the '550 uart has no write FIFO
 	//  full/empty signal so we have to constrain it here
 	int count = 16;
-	InterruptFreeEnter();
+	InterruptFreeEnterInline();
 	
 		while((writeTask = IOCore.uartCurrentWriteTask) != 0)
 		{
@@ -2040,12 +2052,12 @@ void IO_UART_startTransmission(void)
 			{
 				IOCore.uartCurrentWriteTask = (IOCore::WriteTask*)writeTask->next;
 				
-				InterruptFreeLeave();
+				InterruptFreeLeaveInline();
 				
 					system.completeTask(writeTask->task);
 					delete writeTask;
 				
-				InterruptFreeEnter();
+				InterruptFreeEnterInline();
 				
 				if(IOCore.uartCurrentWriteTask == 0)
 					break;
@@ -2054,7 +2066,7 @@ void IO_UART_startTransmission(void)
 				break;		//come back around when there are FIFO bytes free
 		}
 		
-	InterruptFreeLeave();
+	InterruptFreeLeaveInline();
 	
 	*UARTInterrupts &= ~UARTInterrupts_TxBufferEmpty;	//stop being notified on TX ready
 }
@@ -2151,7 +2163,7 @@ Task		IO::UART::write(byte const* s, int length)
 	IOCore::WriteTask* writeTask = new(length) IOCore::WriteTask(s, length);
 	writeTask->task = task;
 	
-	InterruptFreeEnter();
+	InterruptFreeEnterInline();
 	
 		IOCore.queueItem((IOCore::TaskQueueItem**)&IOCore.uartCurrentWriteTask, writeTask);
 		*UARTInterrupts |= UARTInterrupts_TxBufferEmpty;	//notify when we can send bytes
@@ -2160,7 +2172,7 @@ Task		IO::UART::write(byte const* s, int length)
 			== (UARTLineStatus_TxHoldingRegisterEmpty | UARTLineStatus_TransmitterEmpty))
 			IO_UART_startTransmission();
 		
-	InterruptFreeLeave();
+	InterruptFreeLeaveInline();
 	
 	return(task);
 }
@@ -2268,7 +2280,7 @@ void	IO::I2C::start(int bitRate, IO::I2C::Role role)
 	(void)role;
 	*PeripheralnReset &= ~PeripheralnReset_I2C;	//assert reset
 	
-	InterruptFreeEnter();
+	InterruptFreeEnterInline();
 
 		//empty the queue in any case
 		IOCore.flushQueue((IOCore::TaskQueueItem**)&IOCore.i2cCurrentTask);
@@ -2309,7 +2321,7 @@ void	IO::I2C::start(int bitRate, IO::I2C::Role role)
 			*InterruptEnableClear1 = Interrupt1_I2C;
 		}
 	
-	InterruptFreeLeave();
+	InterruptFreeLeaveInline();
 }
 
 Task	IO::I2C::write(byte address, Buffer s, IO::I2C::RepeatedStartSetting repeatedStart)
@@ -2333,7 +2345,7 @@ Task	IO::I2C::write(byte address, Buffer s, IO::I2C::RepeatedStartSetting repeat
 	
 	i2cTask->task = task;
 	
-	InterruptFreeEnter();
+	InterruptFreeEnterInline();
 	
 		bool mustStart = (IOCore.i2cCurrentTask == 0);
 		IOCore.queueItem((IOCore::TaskQueueItem**)&IOCore.i2cCurrentTask, i2cTask);
@@ -2341,7 +2353,7 @@ Task	IO::I2C::write(byte address, Buffer s, IO::I2C::RepeatedStartSetting repeat
 		if(mustStart)
 			*I2CControlSet = I2CControlSet_StartCondition;
 		
-	InterruptFreeLeave();
+	InterruptFreeLeaveInline();
 	
 	return(task);
 }

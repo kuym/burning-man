@@ -189,7 +189,7 @@ int main(void)
 	tSense.bind(io.a2);
 	tSense.setAnalog();
 
-	loadEnable.bind(io.p1);
+	loadEnable.bind(io.cts);
 	loadEnable.setOutput(IO::Pin::PullDown);
 	loadEnable = false;
 

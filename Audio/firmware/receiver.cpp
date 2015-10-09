@@ -8,9 +8,10 @@ using namespace Galago;
 
 unsigned int	System_divideClockFrequencyRounded(unsigned int n, unsigned int d);
 
-unsigned int const	kAudioBufferLength = 1200;
+unsigned int const	kAudioBufferLength = 1568;
+unsigned int volatile		gAudioTail;
+unsigned int volatile		gAudioFill;
 volatile signed short		gAudioBuffer[kAudioBufferLength];
-volatile unsigned int		gAudioTail, gAudioFill;
 
 unsigned int const	kUARTBufferLength = 100;
 volatile unsigned char		gUARTBuffer[kUARTBufferLength];
@@ -22,12 +23,26 @@ extern "C" 	void		IRQ_Timer1(void)
 	// hardware has already toggled the BCK signal, so output the next sample of left-justified audio data right away
 	*LPC1300::Timer1Interrupts = LPC1300::TimerInterrupts_Match0Flag;
 	
-	if((gAudioFill > 0) && ((!!(*LPC1300::Timer1ExternalMatch & LPC1300::TimerExternalMatch_Match0State)) == (gAudioTail & 1)))
+	//if((gAudioFill + gAudioTail) & 1)	// should always be even
+	//	__asm__ volatile("bkpt 16":::);
+	
+	unsigned int fill = gAudioFill, tail = gAudioTail;
+
+	if((fill >= 640) && ((!!(*LPC1300::Timer1ExternalMatch & LPC1300::TimerExternalMatch_Match0State)) == (tail & 1)))
 	{
-		*LPC1300::SPI0Data = ((unsigned short const*)gAudioBuffer)[gAudioTail++];
-		gAudioFill--;
-		if(gAudioTail >= kAudioBufferLength)
-			gAudioTail = 0;
+		*LPC1300::SPI0Data = ((unsigned short const*)gAudioBuffer)[tail++];
+		fill--;
+		if(tail >= kAudioBufferLength)
+			tail = 0;
+
+		//if((fill + tail) & 1)	// should always be even
+		//	__asm__ volatile("bkpt 18":::);
+
+		gAudioFill = fill;
+		gAudioTail = tail;
+		
+		//if((gAudioFill + gAudioTail) & 1)	// should always be even
+		//	__asm__ volatile("bkpt 22":::);
 	}
 	else
 		*LPC1300::SPI0Data = 0;
@@ -35,7 +50,7 @@ extern "C" 	void		IRQ_Timer1(void)
 
 void		AudioDACStart(int sampleRate)
 {
-	InterruptsDisable();
+	InterruptFreeEnter();
 	// shutdown
 	*LPC1300::Timer1Control = LPC1300::TimerControl_Reset;
 	*LPC1300::Timer1MatchControl = 0;
@@ -62,7 +77,7 @@ void		AudioDACStart(int sampleRate)
 		
 		*LPC1300::InterruptEnableSet1 = LPC1300::Interrupt1_Timer1;
 	}
-	InterruptsEnable();
+	InterruptFreeLeave();
 }
 
 void		AudioFIFOInit(void)
@@ -73,23 +88,26 @@ void		AudioFIFOInit(void)
 
 bool		AudioFIFOIsFull(void)
 {
-	InterruptsDisable();
+	InterruptFreeEnter();
 
 	int full = (gAudioFill >= kAudioBufferLength);
 
-	InterruptsEnable();
+	InterruptFreeLeave();
 
 	return(full);
 }
 
 void		AudioFIFOWrite(signed short sampleLeft, signed short sampleRight)
 {
-	InterruptsDisable();
+	InterruptFreeEnter();
 	unsigned int tail = gAudioTail, fill = gAudioFill;
 
+	//if((fill + tail) & 1)	// should always be even
+	//	__asm__ volatile("bkpt 17":::);
+	
 	if(fill >= kAudioBufferLength)
 	{
-		gAudioTail = tail = (tail < (kAudioBufferLength - 1))? (tail + 2) : 0;
+		gAudioTail = tail = (tail < (kAudioBufferLength - 2))? (tail + 2) : 0;
 		fill -= 2;
 	}
 
@@ -97,10 +115,19 @@ void		AudioFIFOWrite(signed short sampleLeft, signed short sampleRight)
 			(tail + fill - kAudioBufferLength)
 		:	(tail + fill);
 
+	//io.p3 = ((h & 1) > 0);	//@@debug
+	
+	//if((h & 1) > 0)	// should always be even
+	//	__asm__ volatile("bkpt 20":::);
+
 	gAudioBuffer[h] = sampleLeft;
 	gAudioBuffer[h + 1] = sampleRight;
 	gAudioFill = fill + 2;
-	InterruptsEnable();
+
+	//if((gAudioFill + gAudioTail) & 1)	// should always be even
+	//	__asm__ volatile("bkpt 19":::);
+
+	InterruptFreeLeave();
 }
 
 // force the distance between the head and tail of the circular buffer to be 'newOffset' by
@@ -109,7 +136,7 @@ void		AudioFIFOSynchronize(unsigned int newOffset)
 {
 	newOffset <<= 1;	// act on stereo pairs
 
-	InterruptsDisable();
+	InterruptFreeEnter();
 
 	unsigned int head = gAudioTail + gAudioFill;
 	if(head > kAudioBufferLength)
@@ -118,7 +145,7 @@ void		AudioFIFOSynchronize(unsigned int newOffset)
 	gAudioTail = (newOffset < head)? (head + kAudioBufferLength - newOffset) : (head - newOffset);
 	gAudioFill = newOffset;
 
-	InterruptsEnable();
+	InterruptFreeLeave();
 }
 
 void		SPIStart(unsigned int bitRate)
@@ -182,20 +209,20 @@ void			UARTInit(void)
 
 bool			UARTCharAvailable(void)
 {
-	InterruptsDisable();
+	InterruptFreeEnter();
 	bool isAvailable = (gUARTFill > 0);
-	InterruptsEnable();
+	InterruptFreeLeave();
 	return(isAvailable);
 }
 
 unsigned char	UARTChar(void)
 {
-	InterruptsDisable();
+	InterruptFreeEnter();
 	unsigned char c = gUARTBuffer[gUARTTail];
 	gUARTFill--;
-	if(++gUARTTail == kUARTBufferLength)
+	if(++gUARTTail >= kUARTBufferLength)
 		gUARTTail = 0;
-	InterruptsEnable();
+	InterruptFreeLeave();
 	return(c);
 }
 
@@ -231,14 +258,14 @@ static void		UARTInterrupt(void)
 			//receive any available bytes
 			while(*LPC1300::UARTLineStatus & LPC1300::UARTLineStatus_ReceiverDataReady)
 			{
-				if(gUARTFill == kUARTBufferLength)
+				if(gUARTFill >= kUARTBufferLength)
 				{
 					gUARTFill--;
 					gUARTTail = ((gUARTTail + 1) < kUARTBufferLength)? (gUARTTail + 1) : 0;
 				}
 
 				unsigned int h = gUARTTail + gUARTFill;
-				if(h > kUARTBufferLength)
+				if(h >= kUARTBufferLength)
 					h -= kUARTBufferLength;
 				gUARTBuffer[h] = *LPC1300::UARTData;
 				gUARTFill++;
@@ -309,6 +336,20 @@ inline int64_t	mul(int32_t stage, int32_t coeff)
 	return(((int64_t)stage * coeff) >> 15);
 }
 
+static unsigned short kAttenuationLUT[100] =
+{
+	1, 1, 1, 1, 2, 2, 2, 2, 2, 3,
+	3, 3, 3, 4, 4, 5, 5, 6, 7, 7,
+	8, 9, 10, 11, 12, 13, 15, 17, 18, 20,
+	23, 25, 28, 31, 34, 38, 42, 47, 52, 58,
+	64, 71, 79, 88, 97, 108, 120, 133, 148, 164,
+	182, 202, 224, 248, 276, 306, 339, 377, 418, 464,
+	515, 571, 634, 703, 780, 866, 961, 1066, 1183, 1313,
+	1457, 1617, 1794, 1991, 2209, 2451, 2720, 3018, 3349, 3717,
+	4124, 4577, 5079, 5635, 6253, 6939, 7700, 8545, 9482, 10522,
+	11675, 12956, 14377, 15953, 17703, 19644, 21798, 24189, 26842, 29785
+};
+
 
 int main(void)
 {
@@ -318,17 +359,26 @@ int main(void)
 	//   - the UART asynchronously, third-highest interrupt priority
 	//   - the SPI asynchronously (via FIFO) but without interrupts
 
-	IO::Pin ampOn, TXnRX;
+	IO::Pin ampOn, TXnRX, frameDecode, io1, io2, io3;
 
 	ampOn.bind(io.p6);
 	ampOn.setOutput();
+	ampOn = false;	// initially mute audio
+	
 	TXnRX.bind(io.rts);
 	TXnRX.setOutput();
-
 	TXnRX = false;	// initially start in RX mode
+
+	// debug timing signals
+	frameDecode.bind(io.p2);
+	frameDecode.setOutput();
+	frameDecode = false;
 	
-	// mute audio
-	ampOn = false;
+	io.p3.setOutput();
+
+	// gpio signals
+	io1.bind(io.a2);
+	io2.bind(io.a3);
 
 	system.setCoreFrequency(72000000UL);
 
@@ -373,97 +423,116 @@ int main(void)
 					vfx = 0;
 	signed int		in[2] = {0}, lp[2] = {0}, hp[2] = {0};
 	
-	while(UARTCharAvailable())
+	ampOn = true;
+	while(1)
 	{
-		// process next received character
-		switch(state)
+		if(UARTCharAvailable())
 		{
-		case StreamState_Uninitialized:
-			if(UARTChar() == 0x7F)
-				state = StreamState_ReceivedInit0;
-			break;
-
-		case StreamState_ReceivedInit0:
-			if(UARTChar() == 0xE0)	state = StreamState_CommandPhase;
-			else					state = StreamState_Uninitialized;
-			break;
-
-		case StreamState_CommandPhase:
-			switch((command = UARTChar()))
+			// process next received character
+			switch(state)
 			{
-			case Command_FrameCountBegin:
-				state = StreamState_FrameCountBegin;
-				break;
-			case Command_Sync:
-				break;
-			case Command_IdentifyEndpoint:
-			case Command_SetAttenuation:
-			case Command_SetLowPassCorner:
-			case Command_SetHighPassCorner:
-			case Command_SetVisualEffects:
-				state = StreamState_CommandValuePhase;
-				break;
-			default:
-				state = StreamState_Uninitialized;	// error and desynchronize
-				break;
-			}
-			break;
-
-		case StreamState_CommandValuePhase:
-			{
-				int value = UARTChar();
-				switch(command)
+			case StreamState_Uninitialized:
+				if(UARTChar() == 0x7F)
 				{
+					state = StreamState_ReceivedInit0;
+					frameDecode = true;
+				}
+				break;
+
+			case StreamState_ReceivedInit0:
+				if(UARTChar() == 0xE0)	state = StreamState_CommandPhase;
+				else
+				{
+					state = StreamState_Uninitialized;
+					frameDecode = false;
+				}
+				break;
+
+			case StreamState_CommandPhase:
+				switch((command = UARTChar()))
+				{
+				case Command_FrameCountBegin:
+					state = StreamState_FrameCountBegin;
+					break;
+				case Command_Sync:
+					break;
 				case Command_IdentifyEndpoint:
-					identify = value;
-					break;
 				case Command_SetAttenuation:
-					attenuation = value;
-					break;
 				case Command_SetLowPassCorner:
-					lpc = value << 8;
-					break;
 				case Command_SetHighPassCorner:
-					hpc = value << 8;
-					break;
 				case Command_SetVisualEffects:
-					vfx = !!value;
+					state = StreamState_CommandValuePhase;
+					break;
+				default:
+					state = StreamState_Uninitialized;	// error and desynchronize
+					frameDecode = false;
 					break;
 				}
+				break;
+
+			case StreamState_CommandValuePhase:
+				{
+					int value = UARTChar();
+					(void)value;
+					switch(command)
+					{
+					case Command_IdentifyEndpoint:
+						identify = value;
+						break;
+					case Command_SetAttenuation:
+						if(value >= 100)
+							value = 99;
+						attenuation = kAttenuationLUT[value];
+						break;
+					case Command_SetLowPassCorner:
+						lpc = (value << 5);
+						break;
+					case Command_SetHighPassCorner:
+						hpc = (value << 5);
+						break;
+					case Command_SetVisualEffects:
+						vfx = !!value;
+						break;
+					}
+				}
+				state = StreamState_CommandPhase;
+				break;
+
+			case StreamState_FrameCountBegin:
+				frameCount = (UARTChar() << 1);
+				state = StreamState_Active;
+				break;
+
+			case StreamState_Active:
+				{
+					unsigned char d = UARTChar();
+
+					in[1] = in[0];
+					in[0] = ULawDecoder[d >> 4](d & 0x0F) << 16;
+					
+					lp[1] = lp[0];
+					lp[0] = (signed int)(mul(in[0], lpc) + mul(lp[1], 32768 - lpc));
+
+					hp[1] = hp[0];
+					hp[0] = (signed int)(mul(in[0], (65536 - hpc) >> 1) + mul(in[1], (-65536 + hpc) >> 1) + mul(hp[1], 32768 - hpc));
+					
+					(void)vfx;
+					(void)identify;
+
+					while(AudioFIFOIsFull())
+						;	// should be a minimally-wasteful synchronization
+
+					AudioFIFOWrite(mul(lp[0], attenuation) >> 16, mul(hp[0], attenuation) >> 16);
+					
+					// @@ add timeout to kick out of the frame after e.g. 100ms has passed
+					if(--frameCount == 0)
+					{
+						state = StreamState_Uninitialized;
+						frameDecode = false;
+					}
+				}
+				break;
 			}
-			state = StreamState_CommandPhase;
-			break;
-
-		case StreamState_FrameCountBegin:
-			frameCount = (UARTChar() << 1);
-			state = StreamState_Active;
-			break;
-
-		case StreamState_Active:
-			{
-				unsigned char d = UARTChar();
-
-				in[1] = in[0];
-				in[0] = ULawDecoder[d >> 4](d & 0x0F) << 16;
-				
-				lp[1] = lp[0];
-				lp[0] = (signed int)(mul(in[0], lpc) + mul(lp[1], 32768 - lpc));
-
-				hp[1] = hp[0];
-				hp[0] = (signed int)(mul(in[0], (65536 - hpc) >> 1) + mul(in[1], (-65536 + hpc) >> 1) + mul(hp[1], 32768 - hpc));
-
-				(void)vfx;
-				(void)identify;
-
-				while(AudioFIFOIsFull())
-					;	// should be a minimally-wasteful synchronization
-
-				AudioFIFOWrite(mul(lp[0], attenuation) >> 16, mul(hp[0], attenuation) >> 16);
-				
-				if(--frameCount == 0)
-					state = StreamState_Uninitialized;
-			}
-			break;
 		}
 	}
 }

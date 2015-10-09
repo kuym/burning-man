@@ -8,15 +8,10 @@ using namespace Galago;
 
 unsigned int	System_divideClockFrequencyRounded(unsigned int n, unsigned int d);
 
-unsigned int const			kAudioBufferLength = 160;
+unsigned int const			kAudioBufferLength = 360;
 volatile unsigned char		gAudioBuffer[kAudioBufferLength];
 volatile unsigned int		gAudioTail, gAudioFill;
 
-
-extern "C" 	void		IRQ_Timer1(void)
-{
-	*LPC1300::Timer1Interrupts = LPC1300::TimerInterrupts_Match0Flag;
-}
 
 void		AudioTxFIFOInit(void)
 {
@@ -26,11 +21,11 @@ void		AudioTxFIFOInit(void)
 
 unsigned int	AudioTxFIFOCount(void)
 {
-	InterruptsDisable();
+	InterruptFreeEnter();
 
 	int full = gAudioFill;
 
-	InterruptsEnable();
+	InterruptFreeLeave();
 
 	return(full);
 }
@@ -40,6 +35,7 @@ bool		AudioTxFIFOIsFull(void)
 	return(AudioTxFIFOCount() >= kAudioBufferLength);
 }
 
+/*
 void		AudioTxFIFOWrite(unsigned char compressedDatum)
 {
 	InterruptsDisable();
@@ -59,10 +55,11 @@ void		AudioTxFIFOWrite(unsigned char compressedDatum)
 	gAudioFill = fill + 1;
 	InterruptsEnable();
 }
+*/
 
 unsigned char	AudioTxFIFORead(void)
 {
-	InterruptsDisable();
+	InterruptFreeEnter();
 
 	unsigned char datum = gAudioBuffer[gAudioTail++];
 	
@@ -70,7 +67,7 @@ unsigned char	AudioTxFIFORead(void)
 	if(gAudioTail >= kAudioBufferLength)
 		gAudioTail = 0;
 	
-	InterruptsEnable();
+	InterruptFreeLeave();
 
 	return(datum);
 }
@@ -183,6 +180,86 @@ unsigned char uLawCompress(signed short sample)
 }
 
 
+extern "C" 	void		IRQ_Timer1(void)
+{
+	*LPC1300::Timer1Interrupts = LPC1300::TimerInterrupts_Match0Flag;
+
+	unsigned char sample = uLawCompress((signed short)(((signed int)io.a0.readAnalog()) - 32768));
+
+	//unsigned char sample = (unsigned char)(io.a0.readAnalog() >> 8);
+	
+	unsigned int tail = gAudioTail, fill = gAudioFill;
+
+	if(fill >= kAudioBufferLength)
+	{
+		gAudioTail = tail = (tail < (kAudioBufferLength - 1))? (tail + 1) : 0;
+		fill -= 1;
+	}
+
+	unsigned int h = ((tail + fill) >= kAudioBufferLength)?
+			(tail + fill - kAudioBufferLength)
+		:	(tail + fill);
+
+	gAudioBuffer[h] = sample;
+	gAudioFill = fill + 1;
+}
+
+static void		UARTInterrupt(void)
+{
+	unsigned int iid;
+	while(((iid = *LPC1300::UARTInterruptID) & LPC1300::UARTInterruptID_InterruptPending) == 0)
+	{
+		switch(iid & LPC1300::UARTInterruptID_ReasonMask)
+		{
+		case LPC1300::UARTInterruptID_ReceiveException:
+			*LPC1300::UARTScratch = *LPC1300::UARTLineStatus;
+			break;
+			
+		case LPC1300::UARTInterruptID_DataAvailable:
+		case LPC1300::UARTInterruptID_ReceiveTimeout:
+			//receive any available bytes
+			while(*LPC1300::UARTLineStatus & LPC1300::UARTLineStatus_ReceiverDataReady)
+				(void)*LPC1300::UARTData;
+			
+			break;
+		}
+	}
+}
+
+
+void		AudioCaptureStart(int sampleRate)
+{
+	InterruptFreeEnter();
+	// shutdown
+	*LPC1300::Timer1Control = LPC1300::TimerControl_Reset;
+	*LPC1300::Timer1MatchControl = 0;
+	*LPC1300::ClockControl &= ~LPC1300::ClockControl_Timer1;
+	
+	if(sampleRate != 0)
+	{
+		io.p5.setOutput();
+		io.p5 = true;
+		io.p5.setPWM();			// monotonic sample clock (aka left-right clock, word select)
+		
+		// set up PWM on p5 (timer1 match0) and interrupt for audio samples
+		*LPC1300::ClockControl |= LPC1300::ClockControl_Timer1;
+		
+		*LPC1300::Timer1Control = (LPC1300::TimerControl_Enable | LPC1300::TimerControl_Reset);
+		
+		*LPC1300::Timer1Prescaler = System_divideClockFrequencyRounded(system.getMainClockFrequency(), sampleRate * 2);
+		*LPC1300::Timer1MatchControl =	LPC1300::TimerMatchControl_Match0Interrupt
+										| LPC1300::TimerMatchControl_Match0Reset;
+		*LPC1300::Timer1ExternalMatch = LPC1300::TimerExternalMatch_Match0Toggle;
+		*LPC1300::Timer1Match0 = 1;
+		
+		*LPC1300::Timer1Control = LPC1300::TimerControl_Enable;
+		
+		*LPC1300::InterruptEnableSet1 = LPC1300::Interrupt1_Timer1;
+	}
+	InterruptFreeLeave();
+}
+
+
 int main(void)
 {
 	// we will use:
@@ -191,17 +268,20 @@ int main(void)
 	//   - the UART asynchronously, third-highest interrupt priority
 	//   - the SPI asynchronously (via FIFO) but without interrupts
 
+	system.setCoreFrequency(72000000UL);
+
+	system.setClockOutputFrequency(72000000UL);
+
 	IO::Pin TXnRX;
 
 	TXnRX.bind(io.rts);
 	
 	TXnRX = false;	// initially start in RX mode
 	
-	system.setCoreFrequency(72000000UL);
-
-	system.setClockOutputFrequency(72000000UL);
-
+	io.a0.setAnalog();
 	io.p1.setMode(IO::Pin::ClockOutput);
+
+	AudioCaptureStart(32000);
 	
 	AudioTxFIFOInit();
 	//UARTInit();
@@ -211,6 +291,7 @@ int main(void)
 	
 	// previously 4, yielding 1.125Mbps
 	// now 12, resulting in 375kbps
+	system.overrideInterrupt(System::UART, &UARTInterrupt);
 	io.serial.startWithExplicitRatio(12, 0, 1, IO::UART::Default);
 
 	TXnRX = true;	// become a transmitter
@@ -229,8 +310,6 @@ int main(void)
 
 			for(unsigned int i = 0; i < frameSize; i++)
 				UARTWriteBlocking(AudioTxFIFORead());
-
-			// frame is complete
 		}
 	}
 }
